@@ -1,0 +1,69 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{amsmath, amsthm, amssymb}
+\usepackage[format=plain, aboveskip=5pt, belowskip=-5pt]{caption}
+\usepackage{cellspace}
+\setlength\cellspacetoplimit{4pt}
+\setlength\cellspacebottomlimit{4pt}
+\newcommand\cincludegraphics[2][]{\raisebox{-0.3\height}{\includegraphics[#1]{#2}}}
+%\usepackage[margin=2cm]{geometry}
+\usepackage{titlesec}
+\titlespacing{\section}{0ex}{3ex}{2ex}
+% \titlespacing{\subsection}{1pt}{1ex}{1ex}
+
+%bibliography - do not remove % on !bib program
+% !BIB program = biber
+\usepackage[backend=biber, citestyle=numeric]{biblatex}
+\addbibresource{/Users/benspinks/Documents/Durham2/Mendeley/Machine Learning.bib}
+\setlength\bibitemsep{0pt}
+\begin{document}
+
+\author{zgxq63}
+\title{OULAD Machine Learning}
+\date{}
+
+% \maketitle
+
+We describe here the procedure by which we train both a decision tree, and a random forest model on the OULAD (online learning) dataset. We provide evaluation of both classifiers.
+
+\section{Data Preparation}
+
+The OULAD data set comes in three categories: student information, assessment data, and VLE data (virtual learning environment). We describe below the transformations that will be applied to the sets and how it is all merged together.
+
+The student information table holds one entry for each registration of a student onto a specific course (session), with demographic information and their final result, being one of either: distinction, pass, fail or withdrawn, this is the target of the classifiers. Most of the other attributes are categorical, and as such they will need to be encoded or transformed into numeric attributes. Where possible, for categorical numeric data we replace these values with the centre of the range represented, i.e, for age band 0-35 we replace this value with 17.5.
+
+Assessment data is of three types, computer marked (CMA), tutor marked (TMA) and final exam. We drop the final exam results as this if the only determinant of if a student passes or fails and so using it would not provide any useful insight. To make this data more sensible, and able to be merged with the other categories we group the entries by such that there is one to one correlated with the student information table. The mean of the score per assessment type is then taken. Through some exploratory data analysis there are promising correlations between these values and course outcome.
+
+The VLE data is particularly large, with a new entry for each student, activity type and day that they engaged with the course, and so aggregation must be performed to make it useable. We firstly merge the student VLE table with the general one, such that we can perform operations on the type of activity. We then look to summarise a students actions over a course on two measures: date, a sense of how many unique days a student engaged with each type of activity; and clicks, a sense of how much interaction a student had with each type of activity. To do so we group by activity type over the student and course, then create pivot tables for both unique visit days and total clicks.
+
+To prepare the merged table for the classifiers we pass it through a typical pipeline. Any NA values are replaced by the mean of the axis, except in the case of the VLE data, here rather than fill NA's with the mean of the axis they are replaced by 0. These 0s are what is truly represented in the data, in that if there was no entry for a specific activity type then they never interacted with it. The categorical data gender, region and highest level of education are one-hot encoded. All numeric values are scaled.
+
+\section{Performance Measurement \& Tuning}
+
+As a starting point we fit both the decision tree and random forest models with the default parameters. We use a 5 fold cross validation strategy to give a good evaluation of their performance (the model is trained on 4 of the 5 folds and tested on the last). We use the metrics of accuracy (correct predictions / total),  recall (ratio of true positives to true positives and false negatives), F1 (a weighted average of recall and precision), and ROC AUC, which is the area under the receiver operating characteristics curve. ROC is a plot of the true positive rate against false positives, area scores closer to 1 signify better classification. 
+
+\begin{center}
+\begin{tabular}{ rrr } 
+& Decision Tree & Random Forest \\ 
+ Accuracy & 0.805 & 0.870 \\ 
+ Recall & 0.864 & 0.955 \\
+ F1 & 0.868 & 0.916 \\
+ ROC AUC & 0.756 & 0.915
+\end{tabular}
+\end{center}
+
+It is clear to see from this that the random forest classifier is able to outperform the decision tree. We then proceed to fine tune the models using a randomised hyper-parameter grid search (using ROC AUC score). After tuning we are able to achieve a relatively nominal improvement on the cross validation scores (from 0.872 to 0.873 accuracy and from 0.915 to 0.919 ROC AUC for the random classifier). We give here the tuned parameters that we found for the random forest model: no bootstrapping of the dataset, 100 max depth, sqrt max features, 2 min leaf samples, 4 min split samples, 800 estimators. Perhaps the most significant here is the quite high number of estimators, or trees in the forest. This implies that the randomised ensemble voting is providing the most benefit in this task.
+
+\section{Evaluation of Methods}
+
+\printbibliography[]
+
+
+
+
+\end{document}
