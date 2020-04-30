@@ -1,6 +1,13 @@
 import pandas as pd
-import sklearn
 import numpy as np
+
+# tune controls wether to run the grid search on hyperparameters
+# it is off by default as it takes quite a while
+tune = False
+# load controls wether the saved models are read in from a file
+# these files are created by the tuning process
+# so once you have tuned you no longer need to re-run the grid search
+load = True
 
 # Student Info
 student_info = pd.read_csv('./anonymisedData/studentInfo.csv')
@@ -16,9 +23,6 @@ assesments = pd.read_csv('./anonymisedData/assessments.csv',
 student_assesments = pd.read_csv(
     './anonymisedData/studentAssessment.csv',
     usecols=['id_assessment', 'id_student', 'score'])
-
-# Drop exams as these are the determinant of outcome, and so provide limited insight
-assesments = assesments.query('assessment_type != "Exam"')
 
 merged_assessments = student_assesments.merge(assesments, on='id_assessment')
 
@@ -49,19 +53,19 @@ merged_vle = merged_vle.groupby(
     ['id_student', 'code_module', 'code_presentation', 'activity_type'])
 
 # Unique visits to each activity type by counting unique days
-vle_visits = merged_vle['date'].count().reset_index()
-# Pivot table here to turn activity/visits columns into individual columns for
+vle_uniq_visits = merged_vle['date'].count().reset_index()
+# Pivot table here to turn visits column into individual columns for
 # each activity with values as the number of visits
-vle_visits = (vle_visits.set_index([
+vle_uniq_visits = (vle_uniq_visits.set_index([
     'id_student', 'code_module', 'code_presentation'
 ]).pivot(columns="activity_type")['date'].reset_index().rename_axis(None,
                                                                     axis=1))
 
-# Total number of interactions (clicks) with each activity type
-vle_clicks = merged_vle['sum_click'].sum().reset_index()
-# Again pivot table to turn activity/clicks columns into individual columns for
+# Total number of interactions with each activity type
+vle_interactions = merged_vle['sum_click'].sum().reset_index()
+# Again pivot table to turn interactions columns into individual columns for
 # each activity
-vle_clicks = (vle_clicks.set_index([
+vle_interactions = (vle_interactions.set_index([
     'id_student', 'code_module', 'code_presentation'
 ]).pivot(columns="activity_type")['sum_click'].reset_index().rename_axis(
     None, axis=1))
@@ -71,24 +75,27 @@ vle_clicks = (vle_clicks.set_index([
 master = pd.merge(student_info,
                   merged_assessments,
                   on=['id_student', 'code_module', 'code_presentation'])
-# Merge on vle_visit table adding suffix to differentiate from clicks table
+# Merge on vle_visit table adding suffix to differentiate from interactiosns table
 master = master.merge(
-    vle_visits.add_suffix('_visits'),
+    vle_uniq_visits.add_suffix('_uniq_visits'),
     left_on=['id_student', 'code_module', 'code_presentation'],
     right_on=[
-        'id_student_visits', 'code_module_visits', 'code_presentation_visits'
+        'id_student_uniq_visits', 'code_module_uniq_visits',
+        'code_presentation_uniq_visits'
     ])
-# Merge on vle_clicks
+# Merge on vle_interactions
 master = master.merge(
-    vle_clicks.add_suffix('_clicks'),
+    vle_interactions.add_suffix('_interactions'),
     left_on=['id_student', 'code_module', 'code_presentation'],
     right_on=[
-        'id_student_clicks', 'code_module_clicks', 'code_presentation_clicks'
+        'id_student_interactions', 'code_module_interactions',
+        'code_presentation_interactions'
     ])
 # Drop redundant rows from suffixed merges of vle table
 master.drop([
-    'id_student_visits', 'code_module_visits', 'code_presentation_visits',
-    'id_student_clicks', 'code_module_clicks', 'code_presentation_clicks'
+    'id_student_uniq_visits', 'code_module_uniq_visits',
+    'code_presentation_uniq_visits', 'id_student_interactions',
+    'code_module_interactions', 'code_presentation_interactions'
 ],
             axis=1,
             inplace=True)
@@ -114,7 +121,7 @@ age_dict = {'0-35': 17.5, '35-55': 45, '55<=': 82.5}
 master.replace({"age_band": age_dict, "imd_band": imd_dict}, inplace=True)
 master.query('final_result != "Withdrawn"', inplace=True)
 
-print('Master table created:', master.shape)
+print('Master table created:', master.shape, '\n')
 
 
 def split_labels(df):
@@ -134,8 +141,8 @@ def pipeline(df):
     # VLE data is selected separately from other numeric as the fill strategy
     # needs to be different
     vle_types = df.filter(
-        regex='_visits$', axis=1).columns.values.tolist() + df.filter(
-            regex='_clicks$', axis=1).columns.values.tolist()
+        regex='_uniq_visits$', axis=1).columns.values.tolist() + df.filter(
+            regex='_interactions$', axis=1).columns.values.tolist()
     # All other numeric columns
     other_numeric = [
         'imd_band', 'age_band', 'num_of_prev_attempts', 'studied_credits',
@@ -216,24 +223,22 @@ tree_classifier = train_tree_classifier(train_values, train_labels)
 forest_classifier = train_forest_classifier(train_values, train_labels)
 
 from sklearn.model_selection import cross_val_score
-print('Tree Classifier Cross Validation Scores')
-# for test in ['accuracy', 'recall', 'f1', 'roc_auc']:
-#     scores = cross_val_score(tree_classifier,
-#                              train_values,
-#                              train_labels,
-#                              scoring=test,
-#                              cv=5)
-#     print(test, np.mean(scores))
-# print('Random Forest Classifier Cross Validation Scores')
-# for test in ['accuracy', 'recall', 'f1', 'roc_auc']:
-#     scores = cross_val_score(forest_classifier,
-#                              train_values,
-#                              train_labels,
-#                              scoring=test,
-#                              cv=5)
-#     print(test, np.mean(scores))
-
-tune = False
+print('\nTree Classifier Cross Validation Scores')
+for test in ['accuracy', 'recall', 'f1', 'roc_auc']:
+    scores = cross_val_score(tree_classifier,
+                             train_values,
+                             train_labels,
+                             scoring=test,
+                             cv=5)
+    print(test, np.mean(scores))
+print('\nRandom Forest Classifier Cross Validation Scores')
+for test in ['accuracy', 'recall', 'f1', 'roc_auc']:
+    scores = cross_val_score(forest_classifier,
+                             train_values,
+                             train_labels,
+                             scoring=test,
+                             cv=5)
+    print(test, np.mean(scores))
 if tune:
     # Random grid search for hyperparameter tuning
     from sklearn.model_selection import RandomizedSearchCV
@@ -252,6 +257,7 @@ if tune:
                                 scoring='roc_auc',
                                 random_state=20)
     search.fit(train_values, train_labels)
+    # Save the best model
     tree_classifier = search.best_estimator_
     save_model('best_tree', tree_classifier)
 
@@ -273,31 +279,88 @@ if tune:
                                 scoring='roc_auc',
                                 random_state=20)
     search.fit(train_values, train_labels)
+    # Save the best model
     forest_classifier = search.best_estimator_
     save_model('best_forest', forest_classifier)
-else:
+elif load:
+    tree_classifier = load_model('best_tree')
     forest_classifier = load_model('best_forest')
+# Test Performance
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import accuracy_score, recall_score, f1_score
 
-print(forest_classifier.get_params())
-# Print best tuned forest
-print('Tuned Random Forest Classifier Cross Validation Scores')
-for test in ['accuracy', 'recall', 'f1', 'roc_auc']:
-    scores = cross_val_score(forest_classifier,
-                             train_values,
-                             train_labels,
-                             scoring=test,
-                             cv=5)
-    print(test, np.mean(scores))
+# Decision tree
+predictions = tree_classifier.predict(test_values)
+print('\nDecision Tree Confusion Matrix\n',
+      confusion_matrix(test_labels, predictions))
 
-# Convert the predictions and real labels to boolean for use in metrics functions
-y_predictions = forest_classifier.predict(test_values)
+# Forest
+predictions = forest_classifier.predict(test_values)
+print('\nForest Confusion Matrix\n', confusion_matrix(test_labels,
+                                                      predictions))
 
-# from sklearn.metrics import roc_auc_score
-# from sklearn.metrics import precision_score, recall_score
-# from sklearn.metrics import accuracy_score
-# print('precision', precision_score(y_true, y_predictions))
-# print('recall', recall_score(y_true, y_predictions))
-# print('accuracy', accuracy_score(y_true, y_predictions))
+# Print testing scores
+print('\nDecision Tree Test Scores\n')
+predictions = tree_classifier.predict(test_values)
+predictions_proba = tree_classifier.predict_proba(test_values)[:, 1]
+print('Accuracy', accuracy_score(test_labels, predictions))
+print('Recall', recall_score(test_labels, predictions))
+print('F1', f1_score(test_labels, predictions))
+print('ROC AUC', roc_auc_score(test_labels, predictions_proba))
 
-# y_predictions = forest_classifier.predict_proba(test_values)[:, 1]
-# print('roc', roc_auc_score(y_true, y_predictions))
+print('\nRandom Forest Test Scores\n')
+predictions = forest_classifier.predict(test_values)
+predictions_proba = forest_classifier.predict_proba(test_values)[:, 1]
+print('Accuracy', accuracy_score(test_labels, predictions))
+print('Recall', recall_score(test_labels, predictions))
+print('F1', f1_score(test_labels, predictions))
+print('ROC AUC', roc_auc_score(test_labels, predictions_proba))
+
+import matplotlib.pyplot as plt
+
+from sklearn.metrics import roc_curve, auc
+
+y_score = forest_classifier.predict_proba(test_values)[:, 1]
+# Compute ROC curve and ROC area for each class
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+fpr[1], tpr[1], _ = roc_curve(test_labels, y_score)
+roc_auc[1] = auc(fpr[1], tpr[1])
+
+# Compute micro-average ROC curve and ROC area
+fpr["micro"], tpr["micro"], _ = roc_curve(test_labels.ravel(), y_score.ravel())
+roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+plt.figure()
+lw = 2
+plt.plot(fpr[1],
+         tpr[1],
+         color='darkorange',
+         lw=lw,
+         label='Forest ROC curve (area = %0.2f)' % roc_auc[1])
+y_score = tree_classifier.predict_proba(test_values)[:, 1]
+# Compute ROC curve and ROC area for each class
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+fpr[1], tpr[1], _ = roc_curve(test_labels, y_score)
+roc_auc[1] = auc(fpr[1], tpr[1])
+
+# Compute micro-average ROC curve and ROC area
+fpr["micro"], tpr["micro"], _ = roc_curve(test_labels.ravel(), y_score.ravel())
+roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+lw = 2
+plt.plot(fpr[1],
+         tpr[1],
+         color='green',
+         lw=lw,
+         label='Decision Tree ROC curve (area = %0.2f)' % roc_auc[1])
+plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curves')
+plt.legend(loc="lower right")
+plt.show()
