@@ -1,13 +1,15 @@
 import pandas as pd
 import numpy as np
 
+# The csv files should be in a folder under the classifer directory called 'anonymisedData'
+
 # tune controls wether to run the grid search on hyperparameters
 # it is off by default as it takes quite a while
 tune = False
 # load controls wether the saved models are read in from a file
 # these files are created by the tuning process
 # so once you have tuned you no longer need to re-run the grid search
-load = True
+load = False
 
 # Student Info
 student_info = pd.read_csv('./anonymisedData/studentInfo.csv')
@@ -44,7 +46,7 @@ merged_assessments = (merged_assessments.set_index([
 vle = pd.read_csv('./anonymisedData/vle.csv',
                   usecols=['id_site', 'activity_type'])
 # Student data
-student_vle = pd.read_csv('./anonymisedData/studentVle.csv.gz')
+student_vle = pd.read_csv('./anonymisedData/studentVle.csv')
 
 # Merge the activity types onto student VLE
 merged_vle = student_vle.merge(vle, on='id_site')
@@ -316,51 +318,3 @@ print('Accuracy', accuracy_score(test_labels, predictions))
 print('Recall', recall_score(test_labels, predictions))
 print('F1', f1_score(test_labels, predictions))
 print('ROC AUC', roc_auc_score(test_labels, predictions_proba))
-
-import matplotlib.pyplot as plt
-
-from sklearn.metrics import roc_curve, auc
-
-y_score = forest_classifier.predict_proba(test_values)[:, 1]
-# Compute ROC curve and ROC area for each class
-fpr = dict()
-tpr = dict()
-roc_auc = dict()
-fpr[1], tpr[1], _ = roc_curve(test_labels, y_score)
-roc_auc[1] = auc(fpr[1], tpr[1])
-
-# Compute micro-average ROC curve and ROC area
-fpr["micro"], tpr["micro"], _ = roc_curve(test_labels.ravel(), y_score.ravel())
-roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
-plt.figure()
-lw = 2
-plt.plot(fpr[1],
-         tpr[1],
-         color='darkorange',
-         lw=lw,
-         label='Forest ROC curve (area = %0.2f)' % roc_auc[1])
-y_score = tree_classifier.predict_proba(test_values)[:, 1]
-# Compute ROC curve and ROC area for each class
-fpr = dict()
-tpr = dict()
-roc_auc = dict()
-fpr[1], tpr[1], _ = roc_curve(test_labels, y_score)
-roc_auc[1] = auc(fpr[1], tpr[1])
-
-# Compute micro-average ROC curve and ROC area
-fpr["micro"], tpr["micro"], _ = roc_curve(test_labels.ravel(), y_score.ravel())
-roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
-lw = 2
-plt.plot(fpr[1],
-         tpr[1],
-         color='green',
-         lw=lw,
-         label='Decision Tree ROC curve (area = %0.2f)' % roc_auc[1])
-plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC Curves')
-plt.legend(loc="lower right")
-plt.show()
